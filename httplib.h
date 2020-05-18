@@ -1958,15 +1958,13 @@ inline bool read_headers(Stream &strm, Headers &headers) {
 
 inline bool read_content_with_length(Stream &strm, uint64_t len,
                                      Progress progress, ContentReceiver out) {
-  char buf[CPPHTTPLIB_RECV_BUFSIZ];
+  auto buf = std::make_unique<char[]>(len);
 
   uint64_t r = 0;
   while (r < len) {
     auto read_len = static_cast<size_t>(len - r);
-    auto n = strm.read(buf, (std::min)(read_len, CPPHTTPLIB_RECV_BUFSIZ));
+    auto n = strm.read(&buf[r], (std::min)(read_len, CPPHTTPLIB_RECV_BUFSIZ));
     if (n <= 0) { return false; }
-
-    if (!out(buf, static_cast<size_t>(n))) { return false; }
 
     r += static_cast<uint64_t>(n);
 
@@ -1974,6 +1972,8 @@ inline bool read_content_with_length(Stream &strm, uint64_t len,
       if (!progress(r, len)) { return false; }
     }
   }
+
+  if (!out(buf.get(), static_cast<size_t>(len))) { return false; }
 
   return true;
 }
