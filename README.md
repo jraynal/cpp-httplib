@@ -203,6 +203,44 @@ svr.Get("/chunked", [&](const Request& req, Response& res) {
 });
 ```
 
+### 'Expect: 100-continue' handler
+
+As default, the server sends `100 Continue` response for `Expect: 100-continue` header.
+
+```cpp
+// Send a '417 Expectation Failed' response.
+svr.set_expect_100_continue_handler([](const Request &req, Response &res) {
+  return 417;
+});
+```
+
+```cpp
+// Send a final status without reading the message body.
+svr.set_expect_100_continue_handler([](const Request &req, Response &res) {
+  return res.status = 401;
+});
+```
+
+### Keep-Alive connection
+
+```cpp
+svr.set_keep_alive_max_count(2); // Default is 5
+```
+
+### Timeout
+
+```c++
+svr.set_read_timeout(5, 0); // 5 seconds
+svr.set_write_timeout(5, 0); // 5 seconds
+svr.set_idle_interval(0, 100000); // 100 milliseconds
+```
+
+### Set maximum payload length for reading request body
+
+```c++
+svr.set_payload_max_length(1024 * 1024 * 512); // 512MB
+```
+
 ### Server-Sent Events
 
 Please check [here](https://github.com/yhirose/cpp-httplib/blob/master/example/sse.cc).
@@ -238,24 +276,6 @@ private:
 svr.new_task_queue = [] {
   return new YourThreadPoolTaskQueue(12);
 };
-```
-
-### 'Expect: 100-continue' handler
-
-As default, the server sends `100 Continue` response for `Expect: 100-continue` header.
-
-```cpp
-// Send a '417 Expectation Failed' response.
-svr.set_expect_100_continue_handler([](const Request &req, Response &res) {
-  return 417;
-});
-```
-
-```cpp
-// Send a final status without reading the message body.
-svr.set_expect_100_continue_handler([](const Request &req, Response &res) {
-  return res.status = 401;
-});
 ```
 
 Client Example
@@ -360,11 +380,14 @@ res = cli.Options("*");
 res = cli.Options("/resource/foo");
 ```
 
-### Connection Timeout
+### Timeout
 
 ```c++
-cli.set_timeout_sec(5); // timeouts in 5 seconds
+cli.set_connection_timeout(0, 300000); // 300 milliseconds
+cli.set_read_timeout(5, 0); // 5 seconds
+cli.set_write_timeout(5, 0); // 5 seconds
 ```
+
 ### Receive content with Content receiver
 
 ```cpp
@@ -459,29 +482,15 @@ httplib::make_range_header({{0, 0}, {-1, 1}})        // 'Range: bytes=0-0, -1'
 ### Keep-Alive connection
 
 ```cpp
-cli.set_keep_alive_max_count(2); // Default is 5
+httplib::Client cli("localhost", 1234);
 
-std::vector<Request> requests;
-Get(requests, "/get-request1");
-Get(requests, "/get-request2");
-Post(requests, "/post-request1", "text", "text/plain");
-Post(requests, "/post-request2", "text", "text/plain");
+cli.Get("/hello");         // with "Connection: close"
 
-const size_t DATA_CHUNK_SIZE = 4;
-std::string data("abcdefg");
-Post(requests, "/post-request-with-content-provider",
-  data.size(),
-  [&](size_t offset, size_t length, DataSink &sink){
-    sink.write(&data[offset], std::min(length, DATA_CHUNK_SIZE));
-  },
-  "text/plain");
+cli.set_keep_alive(true);
+cli.Get("/world");
 
-std::vector<Response> responses;
-if (cli.send(requests, responses)) {
-  for (const auto& res: responses) {
-    ...
-  }
-}
+cli.set_keep_alive(false);
+cli.Get("/last-request");  // with "Connection: close"
 ```
 
 ### Redirect
@@ -536,11 +545,19 @@ The server applies gzip compression to the following MIME type contents:
   * application/xml
   * application/xhtml+xml
 
-### Compress content on client
+### Compress request body on client
 
 ```c++
 cli.set_compress(true);
 res = cli.Post("/resource/foo", "...", "text/plain");
+```
+
+### Compress response body on client
+
+```c++
+cli.set_decompress(false);
+res = cli.Get("/resource/foo", {{"Accept-Encoding", "gzip, deflate"}});
+res->body; // Compressed data
 ```
 
 Split httplib.h into .h and .cc
