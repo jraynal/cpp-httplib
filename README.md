@@ -2,13 +2,10 @@ cpp-httplib
 ===========
 
 [![](https://github.com/yhirose/cpp-httplib/workflows/test/badge.svg)](https://github.com/yhirose/cpp-httplib/actions)
-[![Bulid Status](https://ci.appveyor.com/api/projects/status/github/yhirose/cpp-httplib?branch=master&svg=true)](https://ci.appveyor.com/project/yhirose/cpp-httplib)
 
 A C++11 single-file header-only cross platform HTTP/HTTPS library.
 
 It's extremely easy to setup. Just include **httplib.h** file in your code!
-
-For Windows users: Please read [this note](https://github.com/yhirose/cpp-httplib#windows).
 
 Server Example
 --------------
@@ -243,7 +240,7 @@ svr.set_payload_max_length(1024 * 1024 * 512); // 512MB
 
 ### Server-Sent Events
 
-Please check [here](https://github.com/yhirose/cpp-httplib/blob/master/example/sse.cc).
+Please see [Server example](https://github.com/yhirose/cpp-httplib/blob/master/example/ssesvr.cc) and [Client example](https://github.com/yhirose/cpp-httplib/blob/master/example/ssecli.cc).
 
 ### Default thread pool support
 
@@ -287,7 +284,6 @@ Client Example
 
 int main(void)
 {
-  // IMPORTANT: 1st parameter must be a hostname or an IP adress string.
   httplib::Client cli("localhost", 1234);
 
   auto res = cli.Get("/hi");
@@ -297,6 +293,16 @@ int main(void)
 }
 ```
 
+NOTE: Constructor with scheme-host-port string is now supported!
+
+```c++
+httplib::Client cli("localhost");
+httplib::Client cli("localhost:8080");
+httplib::Client cli("http://localhost");
+httplib::Client cli("http://localhost:8080");
+httplib::Client cli("https://localhost");
+```
+
 ### GET with HTTP headers
 
 ```c++
@@ -304,20 +310,6 @@ httplib::Headers headers = {
   { "Accept-Encoding", "gzip, deflate" }
 };
 auto res = cli.Get("/hi", headers);
-```
-
-### GET with Content Receiver
-
-```c++
-std::string body;
-
-auto res = cli.Get("/large-data",
-  [&](const char *data, size_t data_length) {
-    body.append(data, data_length);
-    return true;
-  });
-
-assert(res->body.empty());
 ```
 
 ### POST
@@ -390,8 +382,19 @@ cli.set_write_timeout(5, 0); // 5 seconds
 
 ### Receive content with Content receiver
 
+```c++
+std::string body;
+
+auto res = cli.Get("/large-data",
+  [&](const char *data, size_t data_length) {
+    body.append(data, data_length);
+    return true;
+  });
+```
+
 ```cpp
 std::string body;
+
 auto res = cli.Get(
   "/stream", Headers(),
   [&](const Response &response) {
@@ -408,6 +411,7 @@ auto res = cli.Get(
 
 ```cpp
 std::string body = ...;
+
 auto res = cli_.Post(
   "/stream", body.size(),
   [](size_t offset, size_t length, DataSink &sink) {
@@ -519,7 +523,7 @@ OpenSSL Support
 
 SSL support is available with `CPPHTTPLIB_OPENSSL_SUPPORT`. `libssl` and `libcrypto` should be linked.
 
-NOTE: cpp-httplib supports 1.1.1 (until 2023-09-11) and 1.0.2 (2019-12-31).
+NOTE: cpp-httplib currently supports only version 1.1.1.
 
 ```c++
 #define CPPHTTPLIB_OPENSSL_SUPPORT
@@ -531,19 +535,26 @@ cli.set_ca_cert_path("./ca-bundle.crt");
 cli.enable_server_certificate_verification(true);
 ```
 
-Zlib Support
-------------
+Compression
+-----------
 
-'gzip' compression is available with `CPPHTTPLIB_ZLIB_SUPPORT`. `libz` should be linked.
+The server can applie compression to the following MIME type contents:
 
-The server applies gzip compression to the following MIME type contents:
-
-  * all text types
+  * all text types except text/event-stream
   * image/svg+xml
   * application/javascript
   * application/json
   * application/xml
   * application/xhtml+xml
+
+### Zlib Support
+
+'gzip' compression is available with `CPPHTTPLIB_ZLIB_SUPPORT`. `libz` should be linked.
+
+### Brotli Support
+
+Brotli compression is available with `CPPHTTPLIB_BROTLI_SUPPORT`. Necessary libraries should be linked.
+Please see https://github.com/google/brotli for more detail.
 
 ### Compress request body on client
 
@@ -556,7 +567,7 @@ res = cli.Post("/resource/foo", "...", "text/plain");
 
 ```c++
 cli.set_decompress(false);
-res = cli.Get("/resource/foo", {{"Accept-Encoding", "gzip, deflate"}});
+res = cli.Get("/resource/foo", {{"Accept-Encoding", "gzip, deflate, br"}});
 res->body; // Compressed data
 ```
 
