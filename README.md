@@ -7,8 +7,41 @@ A C++11 single-file header-only cross platform HTTP/HTTPS library.
 
 It's extremely easy to setup. Just include **httplib.h** file in your code!
 
-Server Example
---------------
+NOTE: This is a 'blocking' HTTP library. If you are looking for a 'non-blocking' library, this is not the one that you want.
+
+Simple examples
+---------------
+
+#### Server
+
+```c++
+httplib::Server svr;
+
+svr.Get("/hi", [](const httplib::Request &, httplib::Response &res) {
+  res.set_content("Hello World!", "text/plain");
+});
+
+svr.listen("0.0.0.0", 8080);
+```
+
+#### Client
+
+```c++
+httplib::Client cli("http://cpp-httplib-server.yhirose.repl.co");
+
+auto res = cli.Get("/hi");
+
+res->status; // 200
+res->body;   // "Hello World!"
+```
+
+### Try out the examples on Repl.it!
+
+1. Run server at https://repl.it/@yhirose/cpp-httplib-server
+2. Run client at https://repl.it/@yhirose/cpp-httplib-client
+
+Server
+------
 
 ```c++
 #include <httplib.h>
@@ -175,12 +208,32 @@ svr.Get("/stream", [&](const Request &req, Response &res) {
 
   res.set_content_provider(
     data->size(), // Content length
+    "text/plain", // Content type
     [data](size_t offset, size_t length, DataSink &sink) {
       const auto &d = *data;
       sink.write(&d[offset], std::min(length, DATA_CHUNK_SIZE));
       return true; // return 'false' if you want to cancel the process.
     },
     [data] { delete data; });
+});
+```
+
+Without content length:
+
+```cpp
+svr.Get("/stream", [&](const Request &req, Response &res) {
+  res.set_content_provider(
+    "text/plain", // Content type
+    [&](size_t offset, size_t length, DataSink &sink) {
+      if (/* there is still data */) {
+        std::vector<char> data;
+        // prepare data...
+        sink.write(data.data(), data.size());
+      } else {
+        sink.done(); // No more data
+      }
+      return true; // return 'false' if you want to cancel the process.
+    });
 });
 ```
 
@@ -193,7 +246,7 @@ svr.Get("/chunked", [&](const Request& req, Response& res) {
       sink.write("123", 3);
       sink.write("345", 3);
       sink.write("789", 3);
-      sink.done();
+      sink.done(); // No more data
       return true; // return 'false' if you want to cancel the process.
     }
   );
@@ -244,12 +297,17 @@ Please see [Server example](https://github.com/yhirose/cpp-httplib/blob/master/e
 
 ### Default thread pool support
 
+`ThreadPool` is used as a **default** task queue, and the default thread count is 8, or `std::thread::hardware_concurrency()`. You can change it with `CPPHTTPLIB_THREAD_POOL_COUNT`.
 
-`ThreadPool` is used as a default task queue, and the default thread count is set to value from `std::thread::hardware_concurrency()`.
+If you want to set the thread count at runtime, there is no convenient way... But here is how.
 
-You can change the thread count by setting `CPPHTTPLIB_THREAD_POOL_COUNT`.
+```cpp
+svr.new_task_queue = [] { return new ThreadPool(12); };
+```
 
 ### Override the default thread pool with yours
+
+You can supply your own thread pool implementation according to your need.
 
 ```cpp
 class YourThreadPoolTaskQueue : public TaskQueue {
@@ -275,8 +333,8 @@ svr.new_task_queue = [] {
 };
 ```
 
-Client Example
---------------
+Client
+------
 
 ```c++
 #include <httplib.h>
@@ -286,9 +344,13 @@ int main(void)
 {
   httplib::Client cli("localhost", 1234);
 
-  auto res = cli.Get("/hi");
-  if (res && res->status == 200) {
-    std::cout << res->body << std::endl;
+  if (auto res = cli.Get("/hi")) {
+    if (res->status == 200) {
+      std::cout << res->body << std::endl;
+    }
+  } else {
+    auto err = res.error();
+    ...
   }
 }
 ```
@@ -310,6 +372,13 @@ httplib::Headers headers = {
   { "Accept-Encoding", "gzip, deflate" }
 };
 auto res = cli.Get("/hi", headers);
+```
+or
+```c++
+cli.set_default_headers({
+  { "Accept-Encoding", "gzip, deflate" }
+});
+auto res = cli.Get("/hi");
 ```
 
 ### POST
@@ -427,13 +496,12 @@ auto res = cli_.Post(
 httplib::Client client(url, port);
 
 // prints: 0 / 000 bytes => 50% complete
-std::shared_ptr<httplib::Response> res =
-  cli.Get("/", [](uint64_t len, uint64_t total) {
-    printf("%lld / %lld bytes => %d%% complete\n",
-      len, total,
-      (int)(len*100/total));
-    return true; // return 'false' if you want to cancel the request.
-  }
+auto res = cli.Get("/", [](uint64_t len, uint64_t total) {
+  printf("%lld / %lld bytes => %d%% complete\n",
+    len, total,
+    (int)(len*100/total));
+  return true; // return 'false' if you want to cancel the request.
+}
 );
 ```
 
@@ -447,6 +515,9 @@ cli.set_basic_auth("user", "pass");
 
 // Digest Authentication
 cli.set_digest_auth("user", "pass");
+
+// Bearer Token Authentication
+cli.set_bearer_token_auth("token");
 ```
 
 NOTE: OpenSSL is required for Digest Authentication.
@@ -461,6 +532,9 @@ cli.set_proxy_basic_auth("user", "pass");
 
 // Digest Authentication
 cli.set_proxy_digest_auth("user", "pass");
+
+// Bearer Token Authentication
+cli.set_proxy_bearer_token_auth("pass");
 ```
 
 NOTE: OpenSSL is required for Digest Authentication.
@@ -528,9 +602,9 @@ NOTE: cpp-httplib currently supports only version 1.1.1.
 ```c++
 #define CPPHTTPLIB_OPENSSL_SUPPORT
 
-SSLServer svr("./cert.pem", "./key.pem");
+httplib::SSLServer svr("./cert.pem", "./key.pem");
 
-SSLClient cli("localhost", 8080);
+httplib::SSLClient cli("localhost", 1234); // or `httplib::Client cli("https://localhost:1234");`
 cli.set_ca_cert_path("./ca-bundle.crt");
 cli.enable_server_certificate_verification(true);
 ```

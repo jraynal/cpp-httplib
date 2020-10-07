@@ -44,6 +44,12 @@ TEST(StartupTest, WSAStartup) {
 }
 #endif
 
+TEST(TrimTests, TrimStringTests) {
+  EXPECT_EQ("abc", detail::trim_copy("abc"));
+  EXPECT_EQ("abc", detail::trim_copy("  abc  "));
+  EXPECT_TRUE(detail::trim_copy("").empty());
+}
+
 TEST(SplitTest, ParseQueryString) {
   string s = "key1=val1&key2=val2&key3=val3";
   Params dic;
@@ -64,6 +70,23 @@ TEST(SplitTest, ParseQueryString) {
   EXPECT_EQ("val1", dic.find("key1")->second);
   EXPECT_EQ("val2", dic.find("key2")->second);
   EXPECT_EQ("val3", dic.find("key3")->second);
+}
+
+TEST(SplitTest, ParseInvalidQueryTests) {
+
+  {
+    string s = " ";
+    Params dict;
+    detail::parse_query_text(s, dict);
+    EXPECT_TRUE(dict.empty());
+  }
+
+  {
+    string s = " = =";
+    Params dict;
+    detail::parse_query_text(s, dict);
+    EXPECT_TRUE(dict.empty());
+  }
 }
 
 TEST(ParseQueryTest, ParseQueryString) {
@@ -294,19 +317,19 @@ TEST(ChunkedEncodingTest, FromHTTPWatch) {
 
 #ifdef CPPHTTPLIB_OPENSSL_SUPPORT
   auto port = 443;
-  httplib::SSLClient cli(host, port);
+  SSLClient cli(host, port);
 #else
   auto port = 80;
-  httplib::Client cli(host, port);
+  Client cli(host, port);
 #endif
   cli.set_connection_timeout(2);
 
   auto res =
       cli.Get("/httpgallery/chunked/chunkedimage.aspx?0.4153841143030137");
-  ASSERT_TRUE(res != nullptr);
+  ASSERT_TRUE(res);
 
   std::string out;
-  httplib::detail::read_file("./image.jpg", out);
+  detail::read_file("./image.jpg", out);
 
   EXPECT_EQ(200, res->status);
   EXPECT_EQ(out, res->body);
@@ -317,10 +340,10 @@ TEST(ChunkedEncodingTest, WithContentReceiver) {
 
 #ifdef CPPHTTPLIB_OPENSSL_SUPPORT
   auto port = 443;
-  httplib::SSLClient cli(host, port);
+  SSLClient cli(host, port);
 #else
   auto port = 80;
-  httplib::Client cli(host, port);
+  Client cli(host, port);
 #endif
   cli.set_connection_timeout(2);
 
@@ -331,10 +354,10 @@ TEST(ChunkedEncodingTest, WithContentReceiver) {
                 body.append(data, data_length);
                 return true;
               });
-  ASSERT_TRUE(res != nullptr);
+  ASSERT_TRUE(res);
 
   std::string out;
-  httplib::detail::read_file("./image.jpg", out);
+  detail::read_file("./image.jpg", out);
 
   EXPECT_EQ(200, res->status);
   EXPECT_EQ(out, body);
@@ -345,16 +368,16 @@ TEST(ChunkedEncodingTest, WithResponseHandlerAndContentReceiver) {
 
 #ifdef CPPHTTPLIB_OPENSSL_SUPPORT
   auto port = 443;
-  httplib::SSLClient cli(host, port);
+  SSLClient cli(host, port);
 #else
   auto port = 80;
-  httplib::Client cli(host, port);
+  Client cli(host, port);
 #endif
   cli.set_connection_timeout(2);
 
   std::string body;
   auto res = cli.Get(
-      "/httpgallery/chunked/chunkedimage.aspx?0.4153841143030137", Headers(),
+      "/httpgallery/chunked/chunkedimage.aspx?0.4153841143030137",
       [&](const Response &response) {
         EXPECT_EQ(200, response.status);
         return true;
@@ -363,13 +386,33 @@ TEST(ChunkedEncodingTest, WithResponseHandlerAndContentReceiver) {
         body.append(data, data_length);
         return true;
       });
-  ASSERT_TRUE(res != nullptr);
+  ASSERT_TRUE(res);
 
   std::string out;
-  httplib::detail::read_file("./image.jpg", out);
+  detail::read_file("./image.jpg", out);
 
   EXPECT_EQ(200, res->status);
   EXPECT_EQ(out, body);
+}
+
+TEST(DefaultHeadersTest, FromHTTPBin) {
+  Client cli("httpbin.org");
+  cli.set_default_headers({make_range_header({{1, 10}})});
+  cli.set_connection_timeout(5);
+
+  {
+    auto res = cli.Get("/range/32");
+    ASSERT_TRUE(res);
+    EXPECT_EQ("bcdefghijk", res->body);
+    EXPECT_EQ(206, res->status);
+  }
+
+  {
+    auto res = cli.Get("/range/32");
+    ASSERT_TRUE(res);
+    EXPECT_EQ("bcdefghijk", res->body);
+    EXPECT_EQ(206, res->status);
+  }
 }
 
 TEST(RangeTest, FromHTTPBin) {
@@ -377,57 +420,56 @@ TEST(RangeTest, FromHTTPBin) {
 
 #ifdef CPPHTTPLIB_OPENSSL_SUPPORT
   auto port = 443;
-  httplib::SSLClient cli(host, port);
+  SSLClient cli(host, port);
 #else
   auto port = 80;
-  httplib::Client cli(host, port);
+  Client cli(host, port);
 #endif
   cli.set_connection_timeout(5);
 
   {
-    httplib::Headers headers;
-    auto res = cli.Get("/range/32", headers);
-    ASSERT_TRUE(res != nullptr);
+    auto res = cli.Get("/range/32");
+    ASSERT_TRUE(res);
     EXPECT_EQ("abcdefghijklmnopqrstuvwxyzabcdef", res->body);
     EXPECT_EQ(200, res->status);
   }
 
   {
-    httplib::Headers headers = {httplib::make_range_header({{1, -1}})};
+    Headers headers = {make_range_header({{1, -1}})};
     auto res = cli.Get("/range/32", headers);
-    ASSERT_TRUE(res != nullptr);
+    ASSERT_TRUE(res);
     EXPECT_EQ("bcdefghijklmnopqrstuvwxyzabcdef", res->body);
     EXPECT_EQ(206, res->status);
   }
 
   {
-    httplib::Headers headers = {httplib::make_range_header({{1, 10}})};
+    Headers headers = {make_range_header({{1, 10}})};
     auto res = cli.Get("/range/32", headers);
-    ASSERT_TRUE(res != nullptr);
+    ASSERT_TRUE(res);
     EXPECT_EQ("bcdefghijk", res->body);
     EXPECT_EQ(206, res->status);
   }
 
   {
-    httplib::Headers headers = {httplib::make_range_header({{0, 31}})};
+    Headers headers = {make_range_header({{0, 31}})};
     auto res = cli.Get("/range/32", headers);
-    ASSERT_TRUE(res != nullptr);
+    ASSERT_TRUE(res);
     EXPECT_EQ("abcdefghijklmnopqrstuvwxyzabcdef", res->body);
     EXPECT_EQ(200, res->status);
   }
 
   {
-    httplib::Headers headers = {httplib::make_range_header({{0, -1}})};
+    Headers headers = {make_range_header({{0, -1}})};
     auto res = cli.Get("/range/32", headers);
-    ASSERT_TRUE(res != nullptr);
+    ASSERT_TRUE(res);
     EXPECT_EQ("abcdefghijklmnopqrstuvwxyzabcdef", res->body);
     EXPECT_EQ(200, res->status);
   }
 
   {
-    httplib::Headers headers = {httplib::make_range_header({{0, 32}})};
+    Headers headers = {make_range_header({{0, 32}})};
     auto res = cli.Get("/range/32", headers);
-    ASSERT_TRUE(res != nullptr);
+    ASSERT_TRUE(res);
     EXPECT_EQ(416, res->status);
   }
 }
@@ -437,29 +479,31 @@ TEST(ConnectionErrorTest, InvalidHost) {
 
 #ifdef CPPHTTPLIB_OPENSSL_SUPPORT
   auto port = 443;
-  httplib::SSLClient cli(host, port);
+  SSLClient cli(host, port);
 #else
   auto port = 80;
-  httplib::Client cli(host, port);
+  Client cli(host, port);
 #endif
   cli.set_connection_timeout(2);
 
   auto res = cli.Get("/");
-  ASSERT_TRUE(res == nullptr);
+  ASSERT_TRUE(!res);
+  EXPECT_EQ(Error::Connection, res.error());
 }
 
 TEST(ConnectionErrorTest, InvalidHost2) {
   auto host = "httpbin.org/";
 
 #ifdef CPPHTTPLIB_OPENSSL_SUPPORT
-  httplib::SSLClient cli(host);
+  SSLClient cli(host);
 #else
-  httplib::Client cli(host);
+  Client cli(host);
 #endif
   cli.set_connection_timeout(2);
 
   auto res = cli.Get("/");
-  ASSERT_TRUE(res == nullptr);
+  ASSERT_TRUE(!res);
+  EXPECT_EQ(Error::Connection, res.error());
 }
 
 TEST(ConnectionErrorTest, InvalidPort) {
@@ -467,15 +511,16 @@ TEST(ConnectionErrorTest, InvalidPort) {
 
 #ifdef CPPHTTPLIB_OPENSSL_SUPPORT
   auto port = 44380;
-  httplib::SSLClient cli(host, port);
+  SSLClient cli(host, port);
 #else
   auto port = 8080;
-  httplib::Client cli(host, port);
+  Client cli(host, port);
 #endif
   cli.set_connection_timeout(2);
 
   auto res = cli.Get("/");
-  ASSERT_TRUE(res == nullptr);
+  ASSERT_TRUE(!res);
+  EXPECT_EQ(Error::Connection, res.error());
 }
 
 TEST(ConnectionErrorTest, Timeout) {
@@ -483,15 +528,16 @@ TEST(ConnectionErrorTest, Timeout) {
 
 #ifdef CPPHTTPLIB_OPENSSL_SUPPORT
   auto port = 44380;
-  httplib::SSLClient cli(host, port);
+  SSLClient cli(host, port);
 #else
   auto port = 8080;
-  httplib::Client cli(host, port);
+  Client cli(host, port);
 #endif
   cli.set_connection_timeout(2);
 
   auto res = cli.Get("/");
-  ASSERT_TRUE(res == nullptr);
+  ASSERT_TRUE(!res);
+  EXPECT_TRUE(res.error() == Error::Connection);
 }
 
 TEST(CancelTest, NoCancel) {
@@ -499,15 +545,15 @@ TEST(CancelTest, NoCancel) {
 
 #ifdef CPPHTTPLIB_OPENSSL_SUPPORT
   auto port = 443;
-  httplib::SSLClient cli(host, port);
+  SSLClient cli(host, port);
 #else
   auto port = 80;
-  httplib::Client cli(host, port);
+  Client cli(host, port);
 #endif
   cli.set_connection_timeout(5);
 
   auto res = cli.Get("/range/32", [](uint64_t, uint64_t) { return true; });
-  ASSERT_TRUE(res != nullptr);
+  ASSERT_TRUE(res);
   EXPECT_EQ("abcdefghijklmnopqrstuvwxyzabcdef", res->body);
   EXPECT_EQ(200, res->status);
 }
@@ -517,15 +563,16 @@ TEST(CancelTest, WithCancelSmallPayload) {
 
 #ifdef CPPHTTPLIB_OPENSSL_SUPPORT
   auto port = 443;
-  httplib::SSLClient cli(host, port);
+  SSLClient cli(host, port);
 #else
   auto port = 80;
-  httplib::Client cli(host, port);
+  Client cli(host, port);
 #endif
 
   auto res = cli.Get("/range/32", [](uint64_t, uint64_t) { return false; });
   cli.set_connection_timeout(5);
-  ASSERT_TRUE(res == nullptr);
+  ASSERT_TRUE(!res);
+  EXPECT_EQ(Error::Canceled, res.error());
 }
 
 TEST(CancelTest, WithCancelLargePayload) {
@@ -533,18 +580,18 @@ TEST(CancelTest, WithCancelLargePayload) {
 
 #ifdef CPPHTTPLIB_OPENSSL_SUPPORT
   auto port = 443;
-  httplib::SSLClient cli(host, port);
+  SSLClient cli(host, port);
 #else
   auto port = 80;
-  httplib::Client cli(host, port);
+  Client cli(host, port);
 #endif
   cli.set_connection_timeout(5);
 
   uint32_t count = 0;
-  httplib::Headers headers;
-  auto res = cli.Get("/range/65536", headers,
+  auto res = cli.Get("/range/65536",
                      [&count](uint64_t, uint64_t) { return (count++ == 0); });
-  ASSERT_TRUE(res == nullptr);
+  ASSERT_TRUE(!res);
+  EXPECT_EQ(Error::Canceled, res.error());
 }
 
 TEST(BaseAuthTest, FromHTTPWatch) {
@@ -552,23 +599,22 @@ TEST(BaseAuthTest, FromHTTPWatch) {
 
 #ifdef CPPHTTPLIB_OPENSSL_SUPPORT
   auto port = 443;
-  httplib::SSLClient cli(host, port);
+  SSLClient cli(host, port);
 #else
   auto port = 80;
-  httplib::Client cli(host, port);
+  Client cli(host, port);
 #endif
 
   {
     auto res = cli.Get("/basic-auth/hello/world");
-    ASSERT_TRUE(res != nullptr);
+    ASSERT_TRUE(res);
     EXPECT_EQ(401, res->status);
   }
 
   {
-    auto res =
-        cli.Get("/basic-auth/hello/world",
-                {httplib::make_basic_authentication_header("hello", "world")});
-    ASSERT_TRUE(res != nullptr);
+    auto res = cli.Get("/basic-auth/hello/world",
+                       {make_basic_authentication_header("hello", "world")});
+    ASSERT_TRUE(res);
     EXPECT_EQ("{\n  \"authenticated\": true, \n  \"user\": \"hello\"\n}\n",
               res->body);
     EXPECT_EQ(200, res->status);
@@ -577,7 +623,7 @@ TEST(BaseAuthTest, FromHTTPWatch) {
   {
     cli.set_basic_auth("hello", "world");
     auto res = cli.Get("/basic-auth/hello/world");
-    ASSERT_TRUE(res != nullptr);
+    ASSERT_TRUE(res);
     EXPECT_EQ("{\n  \"authenticated\": true, \n  \"user\": \"hello\"\n}\n",
               res->body);
     EXPECT_EQ(200, res->status);
@@ -586,14 +632,14 @@ TEST(BaseAuthTest, FromHTTPWatch) {
   {
     cli.set_basic_auth("hello", "bad");
     auto res = cli.Get("/basic-auth/hello/world");
-    ASSERT_TRUE(res != nullptr);
+    ASSERT_TRUE(res);
     EXPECT_EQ(401, res->status);
   }
 
   {
     cli.set_basic_auth("bad", "world");
     auto res = cli.Get("/basic-auth/hello/world");
-    ASSERT_TRUE(res != nullptr);
+    ASSERT_TRUE(res);
     EXPECT_EQ(401, res->status);
   }
 }
@@ -602,11 +648,11 @@ TEST(BaseAuthTest, FromHTTPWatch) {
 TEST(DigestAuthTest, FromHTTPWatch) {
   auto host = "httpbin.org";
   auto port = 443;
-  httplib::SSLClient cli(host, port);
+  SSLClient cli(host, port);
 
   {
     auto res = cli.Get("/digest-auth/auth/hello/world");
-    ASSERT_TRUE(res != nullptr);
+    ASSERT_TRUE(res);
     EXPECT_EQ(401, res->status);
   }
 
@@ -621,7 +667,7 @@ TEST(DigestAuthTest, FromHTTPWatch) {
     cli.set_digest_auth("hello", "world");
     for (auto path : paths) {
       auto res = cli.Get(path.c_str());
-      ASSERT_TRUE(res != nullptr);
+      ASSERT_TRUE(res);
       EXPECT_EQ("{\n  \"authenticated\": true, \n  \"user\": \"hello\"\n}\n",
                 res->body);
       EXPECT_EQ(200, res->status);
@@ -630,7 +676,7 @@ TEST(DigestAuthTest, FromHTTPWatch) {
     cli.set_digest_auth("hello", "bad");
     for (auto path : paths) {
       auto res = cli.Get(path.c_str());
-      ASSERT_TRUE(res != nullptr);
+      ASSERT_TRUE(res);
       EXPECT_EQ(401, res->status);
     }
 
@@ -639,7 +685,7 @@ TEST(DigestAuthTest, FromHTTPWatch) {
     // cli.set_digest_auth("bad", "world");
     // for (auto path : paths) {
     //   auto res = cli.Get(path.c_str());
-    //   ASSERT_TRUE(res != nullptr);
+    //   ASSERT_TRUE(res);
     //   EXPECT_EQ(400, res->status);
     // }
   }
@@ -651,14 +697,14 @@ TEST(AbsoluteRedirectTest, Redirect) {
   auto host = "httpbin.org";
 
 #ifdef CPPHTTPLIB_OPENSSL_SUPPORT
-  httplib::SSLClient cli(host);
+  SSLClient cli(host);
 #else
-  httplib::Client cli(host);
+  Client cli(host);
 #endif
 
   cli.set_follow_location(true);
   auto res = cli.Get("/absolute-redirect/3");
-  ASSERT_TRUE(res != nullptr);
+  ASSERT_TRUE(res);
   EXPECT_EQ(200, res->status);
 }
 
@@ -666,14 +712,14 @@ TEST(RedirectTest, Redirect) {
   auto host = "httpbin.org";
 
 #ifdef CPPHTTPLIB_OPENSSL_SUPPORT
-  httplib::SSLClient cli(host);
+  SSLClient cli(host);
 #else
-  httplib::Client cli(host);
+  Client cli(host);
 #endif
 
   cli.set_follow_location(true);
   auto res = cli.Get("/redirect/3");
-  ASSERT_TRUE(res != nullptr);
+  ASSERT_TRUE(res);
   EXPECT_EQ(200, res->status);
 }
 
@@ -681,14 +727,14 @@ TEST(RelativeRedirectTest, Redirect) {
   auto host = "httpbin.org";
 
 #ifdef CPPHTTPLIB_OPENSSL_SUPPORT
-  httplib::SSLClient cli(host);
+  SSLClient cli(host);
 #else
-  httplib::Client cli(host);
+  Client cli(host);
 #endif
 
   cli.set_follow_location(true);
   auto res = cli.Get("/relative-redirect/3");
-  ASSERT_TRUE(res != nullptr);
+  ASSERT_TRUE(res);
   EXPECT_EQ(200, res->status);
 }
 
@@ -696,38 +742,39 @@ TEST(TooManyRedirectTest, Redirect) {
   auto host = "httpbin.org";
 
 #ifdef CPPHTTPLIB_OPENSSL_SUPPORT
-  httplib::SSLClient cli(host);
+  SSLClient cli(host);
 #else
-  httplib::Client cli(host);
+  Client cli(host);
 #endif
 
   cli.set_follow_location(true);
   auto res = cli.Get("/redirect/21");
-  ASSERT_TRUE(res == nullptr);
+  ASSERT_TRUE(!res);
+  EXPECT_EQ(Error::ExceedRedirectCount, res.error());
 }
 #endif
 
 #ifdef CPPHTTPLIB_OPENSSL_SUPPORT
 TEST(YahooRedirectTest, Redirect) {
-  httplib::Client cli("yahoo.com");
+  Client cli("yahoo.com");
 
   auto res = cli.Get("/");
-  ASSERT_TRUE(res != nullptr);
+  ASSERT_TRUE(res);
   EXPECT_EQ(301, res->status);
 
   cli.set_follow_location(true);
   res = cli.Get("/");
-  ASSERT_TRUE(res != nullptr);
+  ASSERT_TRUE(res);
   EXPECT_EQ(200, res->status);
 }
 
 #if 0
 TEST(HttpsToHttpRedirectTest, Redirect) {
-  httplib::SSLClient cli("httpbin.org");
+  SSLClient cli("httpbin.org");
   cli.set_follow_location(true);
   auto res =
       cli.Get("/redirect-to?url=http%3A%2F%2Fwww.google.com&status_code=302");
-  ASSERT_TRUE(res != nullptr);
+  ASSERT_TRUE(res);
   EXPECT_EQ(200, res->status);
 }
 #endif
@@ -759,7 +806,7 @@ TEST(RedirectToDifferentPort, Redirect) {
   cli.set_follow_location(true);
 
   auto res = cli.Get("/1");
-  ASSERT_TRUE(res != nullptr);
+  ASSERT_TRUE(res);
   EXPECT_EQ(200, res->status);
   EXPECT_EQ("Hello World!", res->body);
 
@@ -772,11 +819,11 @@ TEST(RedirectToDifferentPort, Redirect) {
 }
 
 TEST(UrlWithSpace, Redirect) {
-  httplib::SSLClient cli("edge.forgecdn.net");
+  SSLClient cli("edge.forgecdn.net");
   cli.set_follow_location(true);
 
   auto res = cli.Get("/files/2595/310/Neat 1.4-17.jar");
-  ASSERT_TRUE(res != nullptr);
+  ASSERT_TRUE(res);
   EXPECT_EQ(200, res->status);
   EXPECT_EQ(18527, res->get_header_value<uint64_t>("Content-Length"));
 }
@@ -798,7 +845,7 @@ TEST(Server, BindDualStack) {
     Client cli("127.0.0.1", PORT);
 
     auto res = cli.Get("/1");
-    ASSERT_TRUE(res != nullptr);
+    ASSERT_TRUE(res);
     EXPECT_EQ(200, res->status);
     EXPECT_EQ("Hello World!", res->body);
   }
@@ -806,7 +853,7 @@ TEST(Server, BindDualStack) {
     Client cli("::1", PORT);
 
     auto res = cli.Get("/1");
-    ASSERT_TRUE(res != nullptr);
+    ASSERT_TRUE(res);
     EXPECT_EQ(200, res->status);
     EXPECT_EQ("Hello World!", res->body);
   }
@@ -1040,7 +1087,7 @@ protected:
               })
         .Post("/multipart",
               [&](const Request &req, Response & /*res*/) {
-                EXPECT_EQ(5u, req.files.size());
+                EXPECT_EQ(6u, req.files.size());
                 ASSERT_TRUE(!req.has_file("???"));
                 ASSERT_TRUE(req.body.empty());
 
@@ -1068,6 +1115,13 @@ protected:
                   EXPECT_TRUE(file.filename.empty());
                   EXPECT_EQ("application/octet-stream", file.content_type);
                   EXPECT_EQ(0u, file.content.size());
+                }
+
+                {
+                  const auto &file = req.get_file_value("file4");
+                  EXPECT_TRUE(file.filename.empty());
+                  EXPECT_EQ(0u, file.content.size());
+                  EXPECT_EQ("application/json  tmp-string", file.content_type);
                 }
               })
         .Post("/empty",
@@ -1227,22 +1281,28 @@ protected:
              [&](const Request &req, Response & /*res*/) {
                EXPECT_EQ("close", req.get_header_value("Connection"));
              })
-#ifdef CPPHTTPLIB_ZLIB_SUPPORT
-        .Get("/gzip",
+        .Get(R"(/redirect/(\d+))",
+             [&](const Request &req, Response &res) {
+               auto num = std::stoi(req.matches[1]) + 1;
+               std::string url = "/redirect/" + std::to_string(num);
+               res.set_redirect(url);
+             })
+#if defined(CPPHTTPLIB_ZLIB_SUPPORT) || defined(CPPHTTPLIB_BROTLI_SUPPORT)
+        .Get("/compress",
              [&](const Request & /*req*/, Response &res) {
                res.set_content(
                    "12345678901234567890123456789012345678901234567890123456789"
                    "01234567890123456789012345678901234567890",
                    "text/plain");
              })
-        .Get("/nogzip",
+        .Get("/nocompress",
              [&](const Request & /*req*/, Response &res) {
                res.set_content(
                    "12345678901234567890123456789012345678901234567890123456789"
                    "01234567890123456789012345678901234567890",
                    "application/octet-stream");
              })
-        .Post("/gzipmultipart",
+        .Post("/compress-multipart",
               [&](const Request &req, Response & /*res*/) {
                 EXPECT_EQ(2u, req.files.size());
                 ASSERT_TRUE(!req.has_file("???"));
@@ -1293,7 +1353,7 @@ protected:
 
 TEST_F(ServerTest, GetMethod200) {
   auto res = cli_.Get("/hi");
-  ASSERT_TRUE(res != nullptr);
+  ASSERT_TRUE(res);
   EXPECT_EQ("HTTP/1.1", res->version);
   EXPECT_EQ(200, res->status);
   EXPECT_EQ("text/plain", res->get_header_value("Content-Type"));
@@ -1303,7 +1363,7 @@ TEST_F(ServerTest, GetMethod200) {
 
 TEST_F(ServerTest, GetMethod200withPercentEncoding) {
   auto res = cli_.Get("/%68%69"); // auto res = cli_.Get("/hi");
-  ASSERT_TRUE(res != nullptr);
+  ASSERT_TRUE(res);
   EXPECT_EQ("HTTP/1.1", res->version);
   EXPECT_EQ(200, res->status);
   EXPECT_EQ("text/plain", res->get_header_value("Content-Type"));
@@ -1313,7 +1373,7 @@ TEST_F(ServerTest, GetMethod200withPercentEncoding) {
 
 TEST_F(ServerTest, GetMethod302) {
   auto res = cli_.Get("/");
-  ASSERT_TRUE(res != nullptr);
+  ASSERT_TRUE(res);
   EXPECT_EQ(302, res->status);
   EXPECT_EQ("/hi", res->get_header_value("Location"));
 }
@@ -1321,20 +1381,20 @@ TEST_F(ServerTest, GetMethod302) {
 TEST_F(ServerTest, GetMethod302Redirect) {
   cli_.set_follow_location(true);
   auto res = cli_.Get("/");
-  ASSERT_TRUE(res != nullptr);
+  ASSERT_TRUE(res);
   EXPECT_EQ(200, res->status);
   EXPECT_EQ("Hello World!", res->body);
 }
 
 TEST_F(ServerTest, GetMethod404) {
   auto res = cli_.Get("/invalid");
-  ASSERT_TRUE(res != nullptr);
+  ASSERT_TRUE(res);
   EXPECT_EQ(404, res->status);
 }
 
 TEST_F(ServerTest, HeadMethod200) {
   auto res = cli_.Head("/hi");
-  ASSERT_TRUE(res != nullptr);
+  ASSERT_TRUE(res);
   EXPECT_EQ(200, res->status);
   EXPECT_EQ("text/plain", res->get_header_value("Content-Type"));
   EXPECT_TRUE(res->body.empty());
@@ -1342,7 +1402,7 @@ TEST_F(ServerTest, HeadMethod200) {
 
 TEST_F(ServerTest, HeadMethod200Static) {
   auto res = cli_.Head("/mount/dir/index.html");
-  ASSERT_TRUE(res != nullptr);
+  ASSERT_TRUE(res);
   EXPECT_EQ(200, res->status);
   EXPECT_EQ("text/html", res->get_header_value("Content-Type"));
   EXPECT_EQ(104, std::stoi(res->get_header_value("Content-Length")));
@@ -1351,14 +1411,14 @@ TEST_F(ServerTest, HeadMethod200Static) {
 
 TEST_F(ServerTest, HeadMethod404) {
   auto res = cli_.Head("/invalid");
-  ASSERT_TRUE(res != nullptr);
+  ASSERT_TRUE(res);
   EXPECT_EQ(404, res->status);
   EXPECT_TRUE(res->body.empty());
 }
 
 TEST_F(ServerTest, GetMethodPersonJohn) {
   auto res = cli_.Get("/person/john");
-  ASSERT_TRUE(res != nullptr);
+  ASSERT_TRUE(res);
   EXPECT_EQ(200, res->status);
   EXPECT_EQ("text/plain", res->get_header_value("Content-Type"));
   EXPECT_EQ("programmer", res->body);
@@ -1366,16 +1426,16 @@ TEST_F(ServerTest, GetMethodPersonJohn) {
 
 TEST_F(ServerTest, PostMethod1) {
   auto res = cli_.Get("/person/john1");
-  ASSERT_TRUE(res != nullptr);
+  ASSERT_TRUE(res);
   ASSERT_EQ(404, res->status);
 
   res = cli_.Post("/person", "name=john1&note=coder",
                   "application/x-www-form-urlencoded");
-  ASSERT_TRUE(res != nullptr);
+  ASSERT_TRUE(res);
   ASSERT_EQ(200, res->status);
 
   res = cli_.Get("/person/john1");
-  ASSERT_TRUE(res != nullptr);
+  ASSERT_TRUE(res);
   ASSERT_EQ(200, res->status);
   ASSERT_EQ("text/plain", res->get_header_value("Content-Type"));
   ASSERT_EQ("coder", res->body);
@@ -1383,7 +1443,7 @@ TEST_F(ServerTest, PostMethod1) {
 
 TEST_F(ServerTest, PostMethod2) {
   auto res = cli_.Get("/person/john2");
-  ASSERT_TRUE(res != nullptr);
+  ASSERT_TRUE(res);
   ASSERT_EQ(404, res->status);
 
   Params params;
@@ -1391,11 +1451,11 @@ TEST_F(ServerTest, PostMethod2) {
   params.emplace("note", "coder");
 
   res = cli_.Post("/person", params);
-  ASSERT_TRUE(res != nullptr);
+  ASSERT_TRUE(res);
   ASSERT_EQ(200, res->status);
 
   res = cli_.Get("/person/john2");
-  ASSERT_TRUE(res != nullptr);
+  ASSERT_TRUE(res);
   ASSERT_EQ(200, res->status);
   ASSERT_EQ("text/plain", res->get_header_value("Content-Type"));
   ASSERT_EQ("coder", res->body);
@@ -1403,7 +1463,7 @@ TEST_F(ServerTest, PostMethod2) {
 
 TEST_F(ServerTest, PutMethod3) {
   auto res = cli_.Get("/person/john3");
-  ASSERT_TRUE(res != nullptr);
+  ASSERT_TRUE(res);
   ASSERT_EQ(404, res->status);
 
   Params params;
@@ -1411,11 +1471,11 @@ TEST_F(ServerTest, PutMethod3) {
   params.emplace("note", "coder");
 
   res = cli_.Put("/person", params);
-  ASSERT_TRUE(res != nullptr);
+  ASSERT_TRUE(res);
   ASSERT_EQ(200, res->status);
 
   res = cli_.Get("/person/john3");
-  ASSERT_TRUE(res != nullptr);
+  ASSERT_TRUE(res);
   ASSERT_EQ(200, res->status);
   ASSERT_EQ("text/plain", res->get_header_value("Content-Type"));
   ASSERT_EQ("coder", res->body);
@@ -1427,35 +1487,35 @@ TEST_F(ServerTest, PostWwwFormUrlEncodedJson) {
 
   auto res = cli_.Post("/x-www-form-urlencoded-json", params);
 
-  ASSERT_TRUE(res != nullptr);
+  ASSERT_TRUE(res);
   ASSERT_EQ(200, res->status);
   ASSERT_EQ(JSON_DATA, res->body);
 }
 
 TEST_F(ServerTest, PostEmptyContent) {
   auto res = cli_.Post("/empty", "", "text/plain");
-  ASSERT_TRUE(res != nullptr);
+  ASSERT_TRUE(res);
   ASSERT_EQ(200, res->status);
   ASSERT_EQ("empty", res->body);
 }
 
 TEST_F(ServerTest, PostEmptyContentWithNoContentType) {
   auto res = cli_.Post("/empty-no-content-type");
-  ASSERT_TRUE(res != nullptr);
+  ASSERT_TRUE(res);
   ASSERT_EQ(200, res->status);
   ASSERT_EQ("empty-no-content-type", res->body);
 }
 
 TEST_F(ServerTest, PutEmptyContentWithNoContentType) {
   auto res = cli_.Put("/empty-no-content-type");
-  ASSERT_TRUE(res != nullptr);
+  ASSERT_TRUE(res);
   ASSERT_EQ(200, res->status);
   ASSERT_EQ("empty-no-content-type", res->body);
 }
 
 TEST_F(ServerTest, GetMethodDir) {
   auto res = cli_.Get("/dir/");
-  ASSERT_TRUE(res != nullptr);
+  ASSERT_TRUE(res);
   EXPECT_EQ(200, res->status);
   EXPECT_EQ("text/html", res->get_header_value("Content-Type"));
 
@@ -1473,7 +1533,7 @@ TEST_F(ServerTest, GetMethodDir) {
 
 TEST_F(ServerTest, GetMethodDirTest) {
   auto res = cli_.Get("/dir/test.html");
-  ASSERT_TRUE(res != nullptr);
+  ASSERT_TRUE(res);
   EXPECT_EQ(200, res->status);
   EXPECT_EQ("text/html", res->get_header_value("Content-Type"));
   EXPECT_EQ("test.html", res->body);
@@ -1481,7 +1541,7 @@ TEST_F(ServerTest, GetMethodDirTest) {
 
 TEST_F(ServerTest, GetMethodDirTestWithDoubleDots) {
   auto res = cli_.Get("/dir/../dir/test.html");
-  ASSERT_TRUE(res != nullptr);
+  ASSERT_TRUE(res);
   EXPECT_EQ(200, res->status);
   EXPECT_EQ("text/html", res->get_header_value("Content-Type"));
   EXPECT_EQ("test.html", res->body);
@@ -1489,25 +1549,25 @@ TEST_F(ServerTest, GetMethodDirTestWithDoubleDots) {
 
 TEST_F(ServerTest, GetMethodInvalidPath) {
   auto res = cli_.Get("/dir/../test.html");
-  ASSERT_TRUE(res != nullptr);
+  ASSERT_TRUE(res);
   EXPECT_EQ(404, res->status);
 }
 
 TEST_F(ServerTest, GetMethodOutOfBaseDir) {
   auto res = cli_.Get("/../www/dir/test.html");
-  ASSERT_TRUE(res != nullptr);
+  ASSERT_TRUE(res);
   EXPECT_EQ(404, res->status);
 }
 
 TEST_F(ServerTest, GetMethodOutOfBaseDir2) {
   auto res = cli_.Get("/dir/../../www/dir/test.html");
-  ASSERT_TRUE(res != nullptr);
+  ASSERT_TRUE(res);
   EXPECT_EQ(404, res->status);
 }
 
 TEST_F(ServerTest, GetMethodDirMountTest) {
   auto res = cli_.Get("/mount/dir/test.html");
-  ASSERT_TRUE(res != nullptr);
+  ASSERT_TRUE(res);
   EXPECT_EQ(200, res->status);
   EXPECT_EQ("text/html", res->get_header_value("Content-Type"));
   EXPECT_EQ("test.html", res->body);
@@ -1515,7 +1575,7 @@ TEST_F(ServerTest, GetMethodDirMountTest) {
 
 TEST_F(ServerTest, GetMethodDirMountTestWithDoubleDots) {
   auto res = cli_.Get("/mount/dir/../dir/test.html");
-  ASSERT_TRUE(res != nullptr);
+  ASSERT_TRUE(res);
   EXPECT_EQ(200, res->status);
   EXPECT_EQ("text/html", res->get_header_value("Content-Type"));
   EXPECT_EQ("test.html", res->body);
@@ -1523,25 +1583,25 @@ TEST_F(ServerTest, GetMethodDirMountTestWithDoubleDots) {
 
 TEST_F(ServerTest, GetMethodInvalidMountPath) {
   auto res = cli_.Get("/mount/dir/../test.html");
-  ASSERT_TRUE(res != nullptr);
+  ASSERT_TRUE(res);
   EXPECT_EQ(404, res->status);
 }
 
 TEST_F(ServerTest, GetMethodOutOfBaseDirMount) {
   auto res = cli_.Get("/mount/../www2/dir/test.html");
-  ASSERT_TRUE(res != nullptr);
+  ASSERT_TRUE(res);
   EXPECT_EQ(404, res->status);
 }
 
 TEST_F(ServerTest, GetMethodOutOfBaseDirMount2) {
   auto res = cli_.Get("/mount/dir/../../www2/dir/test.html");
-  ASSERT_TRUE(res != nullptr);
+  ASSERT_TRUE(res);
   EXPECT_EQ(404, res->status);
 }
 
 TEST_F(ServerTest, PostMethod303) {
   auto res = cli_.Post("/1", "body", "text/plain");
-  ASSERT_TRUE(res != nullptr);
+  ASSERT_TRUE(res);
   EXPECT_EQ(303, res->status);
   EXPECT_EQ("/2", res->get_header_value("Location"));
 }
@@ -1549,14 +1609,14 @@ TEST_F(ServerTest, PostMethod303) {
 TEST_F(ServerTest, PostMethod303Redirect) {
   cli_.set_follow_location(true);
   auto res = cli_.Post("/1", "body", "text/plain");
-  ASSERT_TRUE(res != nullptr);
+  ASSERT_TRUE(res);
   EXPECT_EQ(200, res->status);
   EXPECT_EQ("redirected.", res->body);
 }
 
 TEST_F(ServerTest, UserDefinedMIMETypeMapping) {
   auto res = cli_.Get("/dir/test.abcde");
-  ASSERT_TRUE(res != nullptr);
+  ASSERT_TRUE(res);
   EXPECT_EQ(200, res->status);
   EXPECT_EQ("text/abcde", res->get_header_value("Content-Type"));
   EXPECT_EQ("abcde", res->body);
@@ -1568,7 +1628,8 @@ TEST_F(ServerTest, InvalidBaseDirMount) {
 
 TEST_F(ServerTest, EmptyRequest) {
   auto res = cli_.Get("");
-  ASSERT_TRUE(res == nullptr);
+  ASSERT_TRUE(!res);
+  EXPECT_EQ(Error::Connection, res.error());
 }
 
 TEST_F(ServerTest, LongRequest) {
@@ -1580,7 +1641,7 @@ TEST_F(ServerTest, LongRequest) {
 
   auto res = cli_.Get(request.c_str());
 
-  ASSERT_TRUE(res != nullptr);
+  ASSERT_TRUE(res);
   EXPECT_EQ(404, res->status);
 }
 
@@ -1593,7 +1654,7 @@ TEST_F(ServerTest, TooLongRequest) {
 
   auto res = cli_.Get(request.c_str());
 
-  ASSERT_TRUE(res != nullptr);
+  ASSERT_TRUE(res);
   EXPECT_EQ(414, res->status);
 }
 
@@ -1653,7 +1714,7 @@ TEST_F(ServerTest, LongHeader) {
 TEST_F(ServerTest, LongQueryValue) {
   auto res = cli_.Get(LONG_QUERY_URL.c_str());
 
-  ASSERT_TRUE(res != nullptr);
+  ASSERT_TRUE(res);
   EXPECT_EQ(414, res->status);
 }
 
@@ -1712,37 +1773,37 @@ TEST_F(ServerTest, TooLongHeader) {
 
 TEST_F(ServerTest, PercentEncoding) {
   auto res = cli_.Get("/e%6edwith%");
-  ASSERT_TRUE(res != nullptr);
+  ASSERT_TRUE(res);
   EXPECT_EQ(200, res->status);
 }
 
 TEST_F(ServerTest, PercentEncodingUnicode) {
   auto res = cli_.Get("/e%u006edwith%");
-  ASSERT_TRUE(res != nullptr);
+  ASSERT_TRUE(res);
   EXPECT_EQ(200, res->status);
 }
 
 TEST_F(ServerTest, InvalidPercentEncoding) {
   auto res = cli_.Get("/%endwith%");
-  ASSERT_TRUE(res != nullptr);
+  ASSERT_TRUE(res);
   EXPECT_EQ(404, res->status);
 }
 
 TEST_F(ServerTest, InvalidPercentEncodingUnicode) {
   auto res = cli_.Get("/%uendwith%");
-  ASSERT_TRUE(res != nullptr);
+  ASSERT_TRUE(res);
   EXPECT_EQ(404, res->status);
 }
 
 TEST_F(ServerTest, EndWithPercentCharacterInQuery) {
   auto res = cli_.Get("/hello?aaa=bbb%");
-  ASSERT_TRUE(res != nullptr);
+  ASSERT_TRUE(res);
   EXPECT_EQ(404, res->status);
 }
 
 TEST_F(ServerTest, PlusSignEncoding) {
   auto res = cli_.Get("/a+%2Bb?a %2bb=a %2Bb");
-  ASSERT_TRUE(res != nullptr);
+  ASSERT_TRUE(res);
   EXPECT_EQ(200, res->status);
   EXPECT_EQ("a +b", res->body);
 }
@@ -1754,17 +1815,17 @@ TEST_F(ServerTest, MultipartFormData) {
       {"file1", "h\ne\n\nl\nl\no\n", "hello.txt", "text/plain"},
       {"file2", "{\n  \"world\", true\n}\n", "world.json", "application/json"},
       {"file3", "", "", "application/octet-stream"},
-  };
+      {"file4", "", "", "   application/json  tmp-string    "}};
 
   auto res = cli_.Post("/multipart", items);
 
-  ASSERT_TRUE(res != nullptr);
+  ASSERT_TRUE(res);
   EXPECT_EQ(200, res->status);
 }
 
 TEST_F(ServerTest, CaseInsensitiveHeaderName) {
   auto res = cli_.Get("/hi");
-  ASSERT_TRUE(res != nullptr);
+  ASSERT_TRUE(res);
   EXPECT_EQ(200, res->status);
   EXPECT_EQ("text/plain", res->get_header_value("content-type"));
   EXPECT_EQ("Hello World!", res->body);
@@ -1801,7 +1862,7 @@ TEST_F(ServerTest, CaseInsensitiveTransferEncoding) {
 
 TEST_F(ServerTest, GetStreamed2) {
   auto res = cli_.Get("/streamed", {{make_range_header({{2, 3}})}});
-  ASSERT_TRUE(res != nullptr);
+  ASSERT_TRUE(res);
   EXPECT_EQ(206, res->status);
   EXPECT_EQ("2", res->get_header_value("Content-Length"));
   EXPECT_EQ(std::string("ab"), res->body);
@@ -1809,7 +1870,7 @@ TEST_F(ServerTest, GetStreamed2) {
 
 TEST_F(ServerTest, GetStreamed) {
   auto res = cli_.Get("/streamed");
-  ASSERT_TRUE(res != nullptr);
+  ASSERT_TRUE(res);
   EXPECT_EQ(200, res->status);
   EXPECT_EQ("6", res->get_header_value("Content-Length"));
   EXPECT_EQ(std::string("aaabbb"), res->body);
@@ -1817,7 +1878,7 @@ TEST_F(ServerTest, GetStreamed) {
 
 TEST_F(ServerTest, GetStreamedWithRange1) {
   auto res = cli_.Get("/streamed-with-range", {{make_range_header({{3, 5}})}});
-  ASSERT_TRUE(res != nullptr);
+  ASSERT_TRUE(res);
   EXPECT_EQ(206, res->status);
   EXPECT_EQ("3", res->get_header_value("Content-Length"));
   EXPECT_EQ(true, res->has_header("Content-Range"));
@@ -1826,7 +1887,7 @@ TEST_F(ServerTest, GetStreamedWithRange1) {
 
 TEST_F(ServerTest, GetStreamedWithRange2) {
   auto res = cli_.Get("/streamed-with-range", {{make_range_header({{1, -1}})}});
-  ASSERT_TRUE(res != nullptr);
+  ASSERT_TRUE(res);
   EXPECT_EQ(206, res->status);
   EXPECT_EQ("6", res->get_header_value("Content-Length"));
   EXPECT_EQ(true, res->has_header("Content-Range"));
@@ -1836,7 +1897,7 @@ TEST_F(ServerTest, GetStreamedWithRange2) {
 TEST_F(ServerTest, GetStreamedWithRangeMultipart) {
   auto res =
       cli_.Get("/streamed-with-range", {{make_range_header({{1, 2}, {4, 5}})}});
-  ASSERT_TRUE(res != nullptr);
+  ASSERT_TRUE(res);
   EXPECT_EQ(206, res->status);
   EXPECT_EQ("269", res->get_header_value("Content-Length"));
   EXPECT_EQ(false, res->has_header("Content-Range"));
@@ -1853,7 +1914,8 @@ TEST_F(ServerTest, GetStreamedEndless) {
                         }
                         return false;
                       });
-  ASSERT_TRUE(res == nullptr);
+  ASSERT_TRUE(!res);
+  EXPECT_EQ(Error::Canceled, res.error());
 }
 
 TEST_F(ServerTest, ClientStop) {
@@ -1862,7 +1924,8 @@ TEST_F(ServerTest, ClientStop) {
     threads.emplace_back(thread([&]() {
       auto res = cli_.Get("/streamed-cancel",
                           [&](const char *, uint64_t) { return true; });
-      ASSERT_TRUE(res == nullptr);
+      ASSERT_TRUE(!res);
+      EXPECT_TRUE(res.error() == Error::Canceled || res.error() == Error::Read);
     }));
   }
 
@@ -1879,7 +1942,7 @@ TEST_F(ServerTest, ClientStop) {
 
 TEST_F(ServerTest, GetWithRange1) {
   auto res = cli_.Get("/with-range", {{make_range_header({{3, 5}})}});
-  ASSERT_TRUE(res != nullptr);
+  ASSERT_TRUE(res);
   EXPECT_EQ(206, res->status);
   EXPECT_EQ("3", res->get_header_value("Content-Length"));
   EXPECT_EQ(true, res->has_header("Content-Range"));
@@ -1888,7 +1951,7 @@ TEST_F(ServerTest, GetWithRange1) {
 
 TEST_F(ServerTest, GetWithRange2) {
   auto res = cli_.Get("/with-range", {{make_range_header({{1, -1}})}});
-  ASSERT_TRUE(res != nullptr);
+  ASSERT_TRUE(res);
   EXPECT_EQ(206, res->status);
   EXPECT_EQ("6", res->get_header_value("Content-Length"));
   EXPECT_EQ(true, res->has_header("Content-Range"));
@@ -1897,7 +1960,7 @@ TEST_F(ServerTest, GetWithRange2) {
 
 TEST_F(ServerTest, GetWithRange3) {
   auto res = cli_.Get("/with-range", {{make_range_header({{0, 0}})}});
-  ASSERT_TRUE(res != nullptr);
+  ASSERT_TRUE(res);
   EXPECT_EQ(206, res->status);
   EXPECT_EQ("1", res->get_header_value("Content-Length"));
   EXPECT_EQ(true, res->has_header("Content-Range"));
@@ -1906,7 +1969,7 @@ TEST_F(ServerTest, GetWithRange3) {
 
 TEST_F(ServerTest, GetWithRange4) {
   auto res = cli_.Get("/with-range", {{make_range_header({{-1, 2}})}});
-  ASSERT_TRUE(res != nullptr);
+  ASSERT_TRUE(res);
   EXPECT_EQ(206, res->status);
   EXPECT_EQ("2", res->get_header_value("Content-Length"));
   EXPECT_EQ(true, res->has_header("Content-Range"));
@@ -1915,7 +1978,7 @@ TEST_F(ServerTest, GetWithRange4) {
 
 TEST_F(ServerTest, GetWithRangeMultipart) {
   auto res = cli_.Get("/with-range", {{make_range_header({{1, 2}, {4, 5}})}});
-  ASSERT_TRUE(res != nullptr);
+  ASSERT_TRUE(res);
   EXPECT_EQ(206, res->status);
   EXPECT_EQ("269", res->get_header_value("Content-Length"));
   EXPECT_EQ(false, res->has_header("Content-Range"));
@@ -1924,14 +1987,14 @@ TEST_F(ServerTest, GetWithRangeMultipart) {
 
 TEST_F(ServerTest, GetStreamedChunked) {
   auto res = cli_.Get("/streamed-chunked");
-  ASSERT_TRUE(res != nullptr);
+  ASSERT_TRUE(res);
   EXPECT_EQ(200, res->status);
   EXPECT_EQ(std::string("123456789"), res->body);
 }
 
 TEST_F(ServerTest, GetStreamedChunked2) {
   auto res = cli_.Get("/streamed-chunked2");
-  ASSERT_TRUE(res != nullptr);
+  ASSERT_TRUE(res);
   EXPECT_EQ(200, res->status);
   EXPECT_EQ(std::string("123456789"), res->body);
 }
@@ -1969,7 +2032,7 @@ TEST_F(ServerTest, LargeChunkedPost) {
 
 TEST_F(ServerTest, GetMethodRemoteAddr) {
   auto res = cli_.Get("/remote_addr");
-  ASSERT_TRUE(res != nullptr);
+  ASSERT_TRUE(res);
   EXPECT_EQ(200, res->status);
   EXPECT_EQ("text/plain", res->get_header_value("Content-Type"));
   EXPECT_TRUE(res->body == "::1" || res->body == "127.0.0.1");
@@ -1977,7 +2040,7 @@ TEST_F(ServerTest, GetMethodRemoteAddr) {
 
 TEST_F(ServerTest, HTTPResponseSplitting) {
   auto res = cli_.Get("/http_response_splitting");
-  ASSERT_TRUE(res != nullptr);
+  ASSERT_TRUE(res);
   EXPECT_EQ(200, res->status);
 }
 
@@ -2003,7 +2066,7 @@ TEST_F(ServerTest, SlowPost) {
       },
       "text/plain");
 
-  ASSERT_TRUE(res != nullptr);
+  ASSERT_TRUE(res);
   EXPECT_EQ(200, res->status);
 
   cli_.set_write_timeout(0, 0);
@@ -2015,12 +2078,13 @@ TEST_F(ServerTest, SlowPost) {
       },
       "text/plain");
 
-  ASSERT_FALSE(res != nullptr);
+  ASSERT_TRUE(!res);
+  EXPECT_EQ(Error::Write, res.error());
 }
 
 TEST_F(ServerTest, Put) {
   auto res = cli_.Put("/put", "PUT", "text/plain");
-  ASSERT_TRUE(res != nullptr);
+  ASSERT_TRUE(res);
   EXPECT_EQ(200, res->status);
   EXPECT_EQ("PUT", res->body);
 }
@@ -2035,7 +2099,7 @@ TEST_F(ServerTest, PutWithContentProvider) {
       },
       "text/plain");
 
-  ASSERT_TRUE(res != nullptr);
+  ASSERT_TRUE(res);
   EXPECT_EQ(200, res->status);
   EXPECT_EQ("PUT", res->body);
 }
@@ -2048,7 +2112,8 @@ TEST_F(ServerTest, PostWithContentProviderAbort) {
       },
       "text/plain");
 
-  ASSERT_TRUE(res == nullptr);
+  ASSERT_TRUE(!res);
+  EXPECT_EQ(Error::Canceled, res.error());
 }
 
 #ifdef CPPHTTPLIB_ZLIB_SUPPORT
@@ -2063,7 +2128,7 @@ TEST_F(ServerTest, PutWithContentProviderWithGzip) {
       },
       "text/plain");
 
-  ASSERT_TRUE(res != nullptr);
+  ASSERT_TRUE(res);
   EXPECT_EQ(200, res->status);
   EXPECT_EQ("PUT", res->body);
 }
@@ -2077,47 +2142,111 @@ TEST_F(ServerTest, PostWithContentProviderWithGzipAbort) {
       },
       "text/plain");
 
-  ASSERT_TRUE(res == nullptr);
+  ASSERT_TRUE(!res);
+  EXPECT_EQ(Error::Canceled, res.error());
 }
 
 TEST_F(ServerTest, PutLargeFileWithGzip) {
   cli_.set_compress(true);
   auto res = cli_.Put("/put-large", LARGE_DATA, "text/plain");
 
-  ASSERT_TRUE(res != nullptr);
+  ASSERT_TRUE(res);
   EXPECT_EQ(200, res->status);
   EXPECT_EQ(LARGE_DATA, res->body);
 }
 
 TEST_F(ServerTest, PutContentWithDeflate) {
   cli_.set_compress(false);
-  httplib::Headers headers;
+  Headers headers;
   headers.emplace("Content-Encoding", "deflate");
   // PUT in deflate format:
   auto res = cli_.Put("/put", headers,
                       "\170\234\013\010\015\001\0\001\361\0\372", "text/plain");
 
-  ASSERT_TRUE(res != nullptr);
+  ASSERT_TRUE(res);
   EXPECT_EQ(200, res->status);
   EXPECT_EQ("PUT", res->body);
 }
 
 TEST_F(ServerTest, GetStreamedChunkedWithGzip) {
-  httplib::Headers headers;
+  Headers headers;
   headers.emplace("Accept-Encoding", "gzip, deflate");
 
   auto res = cli_.Get("/streamed-chunked", headers);
-  ASSERT_TRUE(res != nullptr);
+  ASSERT_TRUE(res);
   EXPECT_EQ(200, res->status);
   EXPECT_EQ(std::string("123456789"), res->body);
 }
 
 TEST_F(ServerTest, GetStreamedChunkedWithGzip2) {
-  httplib::Headers headers;
+  Headers headers;
   headers.emplace("Accept-Encoding", "gzip, deflate");
 
   auto res = cli_.Get("/streamed-chunked2", headers);
-  ASSERT_TRUE(res != nullptr);
+  ASSERT_TRUE(res);
+  EXPECT_EQ(200, res->status);
+  EXPECT_EQ(std::string("123456789"), res->body);
+}
+
+TEST(GzipDecompressor, ChunkedDecompression) {
+  std::string data;
+  for (size_t i = 0; i < 32 * 1024; ++i) {
+    data.push_back(static_cast<char>('a' + i % 26));
+  }
+
+  std::string compressed_data;
+  {
+    httplib::detail::gzip_compressor compressor;
+    bool result = compressor.compress(
+        data.data(), data.size(),
+        /*last=*/true, [&](const char *data, size_t size) {
+          compressed_data.insert(compressed_data.size(), data, size);
+          return true;
+        });
+    ASSERT_TRUE(result);
+  }
+
+  std::string decompressed_data;
+  {
+    httplib::detail::gzip_decompressor decompressor;
+
+    // Chunk size is chosen specificaly to have a decompressed chunk size equal
+    // to 16384 bytes 16384 bytes is the size of decompressor output buffer
+    size_t chunk_size = 130;
+    for (size_t chunk_begin = 0; chunk_begin < compressed_data.size();
+         chunk_begin += chunk_size) {
+      size_t current_chunk_size =
+          std::min(compressed_data.size() - chunk_begin, chunk_size);
+      bool result = decompressor.decompress(
+          compressed_data.data() + chunk_begin, current_chunk_size,
+          [&](const char *data, size_t size) {
+            decompressed_data.insert(decompressed_data.size(), data, size);
+            return true;
+          });
+      ASSERT_TRUE(result);
+    }
+  }
+  ASSERT_EQ(data, decompressed_data);
+}
+#endif
+
+#ifdef CPPHTTPLIB_BROTLI_SUPPORT
+TEST_F(ServerTest, GetStreamedChunkedWithBrotli) {
+  Headers headers;
+  headers.emplace("Accept-Encoding", "brotli");
+
+  auto res = cli_.Get("/streamed-chunked", headers);
+  ASSERT_TRUE(res);
+  EXPECT_EQ(200, res->status);
+  EXPECT_EQ(std::string("123456789"), res->body);
+}
+
+TEST_F(ServerTest, GetStreamedChunkedWithBrotli2) {
+  Headers headers;
+  headers.emplace("Accept-Encoding", "brotli");
+
+  auto res = cli_.Get("/streamed-chunked2", headers);
+  ASSERT_TRUE(res);
   EXPECT_EQ(200, res->status);
   EXPECT_EQ(std::string("123456789"), res->body);
 }
@@ -2125,28 +2254,28 @@ TEST_F(ServerTest, GetStreamedChunkedWithGzip2) {
 
 TEST_F(ServerTest, Patch) {
   auto res = cli_.Patch("/patch", "PATCH", "text/plain");
-  ASSERT_TRUE(res != nullptr);
+  ASSERT_TRUE(res);
   EXPECT_EQ(200, res->status);
   EXPECT_EQ("PATCH", res->body);
 }
 
 TEST_F(ServerTest, Delete) {
   auto res = cli_.Delete("/delete");
-  ASSERT_TRUE(res != nullptr);
+  ASSERT_TRUE(res);
   EXPECT_EQ(200, res->status);
   EXPECT_EQ("DELETE", res->body);
 }
 
 TEST_F(ServerTest, DeleteContentReceiver) {
   auto res = cli_.Delete("/delete-body", "content", "text/plain");
-  ASSERT_TRUE(res != nullptr);
+  ASSERT_TRUE(res);
   EXPECT_EQ(200, res->status);
   EXPECT_EQ("content", res->body);
 }
 
 TEST_F(ServerTest, Options) {
   auto res = cli_.Options("*");
-  ASSERT_TRUE(res != nullptr);
+  ASSERT_TRUE(res);
   EXPECT_EQ(200, res->status);
   EXPECT_EQ("GET, POST, HEAD, OPTIONS", res->get_header_value("Allow"));
   EXPECT_TRUE(res->body.empty());
@@ -2154,13 +2283,13 @@ TEST_F(ServerTest, Options) {
 
 TEST_F(ServerTest, URL) {
   auto res = cli_.Get("/request-target?aaa=bbb&ccc=ddd");
-  ASSERT_TRUE(res != nullptr);
+  ASSERT_TRUE(res);
   EXPECT_EQ(200, res->status);
 }
 
 TEST_F(ServerTest, ArrayParam) {
   auto res = cli_.Get("/array-param?array=value1&array=value2&array=value3");
-  ASSERT_TRUE(res != nullptr);
+  ASSERT_TRUE(res);
   EXPECT_EQ(200, res->status);
 }
 
@@ -2168,13 +2297,13 @@ TEST_F(ServerTest, NoMultipleHeaders) {
   Headers headers = {{"Content-Length", "5"}};
   auto res = cli_.Post("/validate-no-multiple-headers", headers, "hello",
                        "text/plain");
-  ASSERT_TRUE(res != nullptr);
+  ASSERT_TRUE(res);
   EXPECT_EQ(200, res->status);
 }
 
 TEST_F(ServerTest, PostContentReceiver) {
   auto res = cli_.Post("/content_receiver", "content", "text/plain");
-  ASSERT_TRUE(res != nullptr);
+  ASSERT_TRUE(res);
   ASSERT_EQ(200, res->status);
   ASSERT_EQ("content", res->body);
 }
@@ -2190,28 +2319,63 @@ TEST_F(ServerTest, PostMulitpartFilsContentReceiver) {
 
   auto res = cli_.Post("/content_receiver", items);
 
-  ASSERT_TRUE(res != nullptr);
+  ASSERT_TRUE(res);
+  EXPECT_EQ(200, res->status);
+}
+
+TEST_F(ServerTest, PostMulitpartPlusBoundary) {
+  MultipartFormDataItems items = {
+      {"text1", "text default", "", ""},
+      {"text2", "aωb", "", ""},
+      {"file1", "h\ne\n\nl\nl\no\n", "hello.txt", "text/plain"},
+      {"file2", "{\n  \"world\", true\n}\n", "world.json", "application/json"},
+      {"file3", "", "", "application/octet-stream"},
+  };
+
+  auto boundary = std::string("+++++");
+
+  std::string body;
+
+  for (const auto &item : items) {
+    body += "--" + boundary + "\r\n";
+    body += "Content-Disposition: form-data; name=\"" + item.name + "\"";
+    if (!item.filename.empty()) {
+      body += "; filename=\"" + item.filename + "\"";
+    }
+    body += "\r\n";
+    if (!item.content_type.empty()) {
+      body += "Content-Type: " + item.content_type + "\r\n";
+    }
+    body += "\r\n";
+    body += item.content + "\r\n";
+  }
+  body += "--" + boundary + "--\r\n";
+
+  std::string content_type = "multipart/form-data; boundary=" + boundary;
+  auto res = cli_.Post("/content_receiver", body, content_type.c_str());
+
+  ASSERT_TRUE(res);
   EXPECT_EQ(200, res->status);
 }
 
 TEST_F(ServerTest, PostContentReceiverGzip) {
   cli_.set_compress(true);
   auto res = cli_.Post("/content_receiver", "content", "text/plain");
-  ASSERT_TRUE(res != nullptr);
+  ASSERT_TRUE(res);
   ASSERT_EQ(200, res->status);
   ASSERT_EQ("content", res->body);
 }
 
 TEST_F(ServerTest, PutContentReceiver) {
   auto res = cli_.Put("/content_receiver", "content", "text/plain");
-  ASSERT_TRUE(res != nullptr);
+  ASSERT_TRUE(res);
   ASSERT_EQ(200, res->status);
   ASSERT_EQ("content", res->body);
 }
 
 TEST_F(ServerTest, PatchContentReceiver) {
   auto res = cli_.Patch("/content_receiver", "content", "text/plain");
-  ASSERT_TRUE(res != nullptr);
+  ASSERT_TRUE(res);
   ASSERT_EQ(200, res->status);
   ASSERT_EQ("content", res->body);
 }
@@ -2219,7 +2383,7 @@ TEST_F(ServerTest, PatchContentReceiver) {
 TEST_F(ServerTest, PostQueryStringAndBody) {
   auto res =
       cli_.Post("/query-string-and-body?key=value", "content", "text/plain");
-  ASSERT_TRUE(res != nullptr);
+  ASSERT_TRUE(res);
   ASSERT_EQ(200, res->status);
 }
 
@@ -2238,56 +2402,63 @@ TEST_F(ServerTest, HTTP2Magic) {
 
 TEST_F(ServerTest, KeepAlive) {
   auto res = cli_.Get("/hi");
-  ASSERT_TRUE(res != nullptr);
+  ASSERT_TRUE(res);
   EXPECT_EQ(200, res->status);
   EXPECT_EQ("text/plain", res->get_header_value("Content-Type"));
   EXPECT_EQ("Hello World!", res->body);
 
   res = cli_.Get("/hi");
-  ASSERT_TRUE(res != nullptr);
+  ASSERT_TRUE(res);
   EXPECT_EQ(200, res->status);
   EXPECT_EQ("text/plain", res->get_header_value("Content-Type"));
   EXPECT_EQ("Hello World!", res->body);
 
   res = cli_.Get("/hi");
-  ASSERT_TRUE(res != nullptr);
+  ASSERT_TRUE(res);
   EXPECT_EQ(200, res->status);
   EXPECT_EQ("text/plain", res->get_header_value("Content-Type"));
   EXPECT_EQ("Hello World!", res->body);
 
   res = cli_.Get("/not-exist");
-  ASSERT_TRUE(res != nullptr);
+  ASSERT_TRUE(res);
   EXPECT_EQ(404, res->status);
 
   res = cli_.Post("/empty", "", "text/plain");
-  ASSERT_TRUE(res != nullptr);
+  ASSERT_TRUE(res);
   EXPECT_EQ(200, res->status);
   EXPECT_EQ("text/plain", res->get_header_value("Content-Type"));
   EXPECT_EQ("empty", res->body);
   EXPECT_EQ("close", res->get_header_value("Connection"));
 
   res = cli_.Post(
-      "/empty", 0, [&](size_t, size_t, httplib::DataSink &) { return true; },
+      "/empty", 0, [&](size_t, size_t, DataSink &) { return true; },
       "text/plain");
-  ASSERT_TRUE(res != nullptr);
+  ASSERT_TRUE(res);
   EXPECT_EQ(200, res->status);
   EXPECT_EQ("text/plain", res->get_header_value("Content-Type"));
   EXPECT_EQ("empty", res->body);
 
   cli_.set_keep_alive(false);
   res = cli_.Get("/last-request");
-  ASSERT_TRUE(res != nullptr);
+  ASSERT_TRUE(res);
   EXPECT_EQ(200, res->status);
   EXPECT_EQ("close", res->get_header_value("Connection"));
+}
+
+TEST_F(ServerTest, TooManyRedirect) {
+  cli_.set_follow_location(true);
+  auto res = cli_.Get("/redirect/0");
+  ASSERT_TRUE(!res);
+  EXPECT_EQ(Error::ExceedRedirectCount, res.error());
 }
 
 #ifdef CPPHTTPLIB_ZLIB_SUPPORT
 TEST_F(ServerTest, Gzip) {
   Headers headers;
   headers.emplace("Accept-Encoding", "gzip, deflate");
-  auto res = cli_.Get("/gzip", headers);
+  auto res = cli_.Get("/compress", headers);
 
-  ASSERT_TRUE(res != nullptr);
+  ASSERT_TRUE(res);
   EXPECT_EQ("gzip", res->get_header_value("Content-Encoding"));
   EXPECT_EQ("text/plain", res->get_header_value("Content-Type"));
   EXPECT_EQ("33", res->get_header_value("Content-Length"));
@@ -2298,10 +2469,9 @@ TEST_F(ServerTest, Gzip) {
 }
 
 TEST_F(ServerTest, GzipWithoutAcceptEncoding) {
-  Headers headers;
-  auto res = cli_.Get("/gzip", headers);
+  auto res = cli_.Get("/compress");
 
-  ASSERT_TRUE(res != nullptr);
+  ASSERT_TRUE(res);
   EXPECT_TRUE(res->get_header_value("Content-Encoding").empty());
   EXPECT_EQ("text/plain", res->get_header_value("Content-Type"));
   EXPECT_EQ("100", res->get_header_value("Content-Length"));
@@ -2315,14 +2485,14 @@ TEST_F(ServerTest, GzipWithContentReceiver) {
   Headers headers;
   headers.emplace("Accept-Encoding", "gzip, deflate");
   std::string body;
-  auto res =
-      cli_.Get("/gzip", headers, [&](const char *data, uint64_t data_length) {
-        EXPECT_EQ(data_length, 100);
-        body.append(data, data_length);
-        return true;
-      });
+  auto res = cli_.Get("/compress", headers,
+                      [&](const char *data, uint64_t data_length) {
+                        EXPECT_EQ(data_length, 100);
+                        body.append(data, data_length);
+                        return true;
+                      });
 
-  ASSERT_TRUE(res != nullptr);
+  ASSERT_TRUE(res);
   EXPECT_EQ("gzip", res->get_header_value("Content-Encoding"));
   EXPECT_EQ("text/plain", res->get_header_value("Content-Type"));
   EXPECT_EQ("33", res->get_header_value("Content-Length"));
@@ -2337,9 +2507,9 @@ TEST_F(ServerTest, GzipWithoutDecompressing) {
   headers.emplace("Accept-Encoding", "gzip, deflate");
 
   cli_.set_decompress(false);
-  auto res = cli_.Get("/gzip", headers);
+  auto res = cli_.Get("/compress", headers);
 
-  ASSERT_TRUE(res != nullptr);
+  ASSERT_TRUE(res);
   EXPECT_EQ("gzip", res->get_header_value("Content-Encoding"));
   EXPECT_EQ("text/plain", res->get_header_value("Content-Type"));
   EXPECT_EQ("33", res->get_header_value("Content-Length"));
@@ -2348,16 +2518,14 @@ TEST_F(ServerTest, GzipWithoutDecompressing) {
 }
 
 TEST_F(ServerTest, GzipWithContentReceiverWithoutAcceptEncoding) {
-  Headers headers;
   std::string body;
-  auto res =
-      cli_.Get("/gzip", headers, [&](const char *data, uint64_t data_length) {
-        EXPECT_EQ(data_length, 100);
-        body.append(data, data_length);
-        return true;
-      });
+  auto res = cli_.Get("/compress", [&](const char *data, uint64_t data_length) {
+    EXPECT_EQ(data_length, 100);
+    body.append(data, data_length);
+    return true;
+  });
 
-  ASSERT_TRUE(res != nullptr);
+  ASSERT_TRUE(res);
   EXPECT_TRUE(res->get_header_value("Content-Encoding").empty());
   EXPECT_EQ("text/plain", res->get_header_value("Content-Type"));
   EXPECT_EQ("100", res->get_header_value("Content-Length"));
@@ -2370,9 +2538,9 @@ TEST_F(ServerTest, GzipWithContentReceiverWithoutAcceptEncoding) {
 TEST_F(ServerTest, NoGzip) {
   Headers headers;
   headers.emplace("Accept-Encoding", "gzip, deflate");
-  auto res = cli_.Get("/nogzip", headers);
+  auto res = cli_.Get("/nocompress", headers);
 
-  ASSERT_TRUE(res != nullptr);
+  ASSERT_TRUE(res);
   EXPECT_EQ(false, res->has_header("Content-Encoding"));
   EXPECT_EQ("application/octet-stream", res->get_header_value("Content-Type"));
   EXPECT_EQ("100", res->get_header_value("Content-Length"));
@@ -2386,14 +2554,14 @@ TEST_F(ServerTest, NoGzipWithContentReceiver) {
   Headers headers;
   headers.emplace("Accept-Encoding", "gzip, deflate");
   std::string body;
-  auto res =
-      cli_.Get("/nogzip", headers, [&](const char *data, uint64_t data_length) {
-        EXPECT_EQ(data_length, 100);
-        body.append(data, data_length);
-        return true;
-      });
+  auto res = cli_.Get("/nocompress", headers,
+                      [&](const char *data, uint64_t data_length) {
+                        EXPECT_EQ(data_length, 100);
+                        body.append(data, data_length);
+                        return true;
+                      });
 
-  ASSERT_TRUE(res != nullptr);
+  ASSERT_TRUE(res);
   EXPECT_EQ(false, res->has_header("Content-Encoding"));
   EXPECT_EQ("application/octet-stream", res->get_header_value("Content-Type"));
   EXPECT_EQ("100", res->get_header_value("Content-Length"));
@@ -2410,9 +2578,26 @@ TEST_F(ServerTest, MultipartFormDataGzip) {
   };
 
   cli_.set_compress(true);
-  auto res = cli_.Post("/gzipmultipart", items);
+  auto res = cli_.Post("/compress-multipart", items);
 
-  ASSERT_TRUE(res != nullptr);
+  ASSERT_TRUE(res);
+  EXPECT_EQ(200, res->status);
+}
+#endif
+
+#ifdef CPPHTTPLIB_BROTLI_SUPPORT
+TEST_F(ServerTest, Brotli) {
+  Headers headers;
+  headers.emplace("Accept-Encoding", "br");
+  auto res = cli_.Get("/compress", headers);
+
+  ASSERT_TRUE(res);
+  EXPECT_EQ("brotli", res->get_header_value("Content-Encoding"));
+  EXPECT_EQ("text/plain", res->get_header_value("Content-Type"));
+  EXPECT_EQ("19", res->get_header_value("Content-Length"));
+  EXPECT_EQ("123456789012345678901234567890123456789012345678901234567890123456"
+            "7890123456789012345678901234567890",
+            res->body);
   EXPECT_EQ(200, res->status);
 }
 #endif
@@ -2420,9 +2605,11 @@ TEST_F(ServerTest, MultipartFormDataGzip) {
 // Sends a raw request to a server listening at HOST:PORT.
 static bool send_request(time_t read_timeout_sec, const std::string &req,
                          std::string *resp = nullptr) {
+  Error error = Error::Success;
+
   auto client_sock =
       detail::create_client_socket(HOST, PORT, false, nullptr,
-                                   /*timeout_sec=*/5, 0, std::string());
+                                   /*timeout_sec=*/5, 0, std::string(), error);
 
   if (client_sock == INVALID_SOCKET) { return false; }
 
@@ -2632,13 +2819,52 @@ TEST(ServerStopTest, StopServerWithChunkedTransmission) {
   const Headers headers = {{"Accept", "text/event-stream"}};
 
   auto get_thread = std::thread([&client, &headers]() {
-    std::shared_ptr<Response> res = client.Get(
+    auto res = client.Get(
         "/events", headers,
         [](const char * /*data*/, size_t /*len*/) -> bool { return true; });
   });
 
   // Give GET time to get a few messages.
   std::this_thread::sleep_for(std::chrono::seconds(2));
+
+  svr.stop();
+
+  listen_thread.join();
+  get_thread.join();
+
+  ASSERT_FALSE(svr.is_running());
+}
+
+TEST(StreamingTest, NoContentLengthStreaming) {
+  Server svr;
+
+  svr.Get("/stream", [](const Request & /*req*/, Response &res) {
+    res.set_content_provider("text/plain", [](size_t offset, DataSink &sink) {
+      if (offset < 6) {
+        sink.os << (offset < 3 ? "a" : "b");
+      } else {
+        sink.done();
+      }
+      return true;
+    });
+  });
+
+  auto listen_thread = std::thread([&svr]() { svr.listen("localhost", PORT); });
+  while (!svr.is_running()) {
+    std::this_thread::sleep_for(std::chrono::milliseconds(1));
+  }
+
+  Client client(HOST, PORT);
+
+  auto get_thread = std::thread([&client]() {
+    auto res = client.Get("/stream", [](const char *data, size_t len) -> bool {
+      EXPECT_EQ("aaabbb", std::string(data, len));
+      return true;
+    });
+  });
+
+  // Give GET time to get a few messages.
+  std::this_thread::sleep_for(std::chrono::milliseconds(500));
 
   svr.stop();
 
@@ -2664,27 +2890,27 @@ TEST(MountTest, Unmount) {
   svr.set_mount_point("/mount2", "./www2");
 
   auto res = cli.Get("/");
-  ASSERT_TRUE(res != nullptr);
+  ASSERT_TRUE(res);
   EXPECT_EQ(404, res->status);
 
   res = cli.Get("/mount2/dir/test.html");
-  ASSERT_TRUE(res != nullptr);
+  ASSERT_TRUE(res);
   EXPECT_EQ(200, res->status);
 
   svr.set_mount_point("/", "./www");
 
   res = cli.Get("/dir/");
-  ASSERT_TRUE(res != nullptr);
+  ASSERT_TRUE(res);
   EXPECT_EQ(200, res->status);
 
   svr.remove_mount_point("/");
   res = cli.Get("/dir/");
-  ASSERT_TRUE(res != nullptr);
+  ASSERT_TRUE(res);
   EXPECT_EQ(404, res->status);
 
   svr.remove_mount_point("/mount2");
   res = cli.Get("/mount2/dir/test.html");
-  ASSERT_TRUE(res != nullptr);
+  ASSERT_TRUE(res);
   EXPECT_EQ(404, res->status);
 
   svr.stop();
@@ -2711,7 +2937,7 @@ TEST(ExceptionTest, ThrowExceptionInHandler) {
   Client cli("localhost", PORT);
 
   auto res = cli.Get("/hi");
-  ASSERT_TRUE(res != nullptr);
+  ASSERT_TRUE(res);
   EXPECT_EQ(500, res->status);
   ASSERT_FALSE(res->has_header("EXCEPTION_WHAT"));
 
@@ -2745,10 +2971,11 @@ TEST(KeepAliveTest, ReadTimeout) {
   cli.set_read_timeout(1);
 
   auto resa = cli.Get("/a");
-  ASSERT_TRUE(resa == nullptr);
+  ASSERT_TRUE(!resa);
+  EXPECT_EQ(Error::Read, resa.error());
 
   auto resb = cli.Get("/b");
-  ASSERT_TRUE(resb != nullptr);
+  ASSERT_TRUE(resb);
   EXPECT_EQ(200, resb->status);
   EXPECT_EQ("b", resb->body);
 
@@ -2800,7 +3027,7 @@ protected:
 
 TEST_F(ServerTestWithAI_PASSIVE, GetMethod200) {
   auto res = cli_.Get("/hi");
-  ASSERT_TRUE(res != nullptr);
+  ASSERT_TRUE(res);
   EXPECT_EQ(200, res->status);
   EXPECT_EQ("text/plain", res->get_header_value("Content-Type"));
   EXPECT_EQ("Hello World!", res->body);
@@ -2882,11 +3109,11 @@ protected:
 
 TEST_F(PayloadMaxLengthTest, ExceedLimit) {
   auto res = cli_.Post("/test", "123456789", "text/plain");
-  ASSERT_TRUE(res != nullptr);
+  ASSERT_TRUE(res);
   EXPECT_EQ(413, res->status);
 
   res = cli_.Post("/test", "12345678", "text/plain");
-  ASSERT_TRUE(res != nullptr);
+  ASSERT_TRUE(res);
   EXPECT_EQ(200, res->status);
 }
 
@@ -2894,14 +3121,14 @@ TEST_F(PayloadMaxLengthTest, ExceedLimit) {
 TEST(SSLClientTest, ServerNameIndication) {
   SSLClient cli("httpbin.org", 443);
   auto res = cli.Get("/get");
-  ASSERT_TRUE(res != nullptr);
+  ASSERT_TRUE(res);
   ASSERT_EQ(200, res->status);
 }
 
 TEST(SSLClientTest, ServerCertificateVerification1) {
   SSLClient cli("google.com");
   auto res = cli.Get("/");
-  ASSERT_TRUE(res != nullptr);
+  ASSERT_TRUE(res);
   ASSERT_EQ(301, res->status);
 }
 
@@ -2910,14 +3137,15 @@ TEST(SSLClientTest, ServerCertificateVerification2) {
   cli.enable_server_certificate_verification(true);
   cli.set_ca_cert_path("hello");
   auto res = cli.Get("/");
-  ASSERT_TRUE(res == nullptr);
+  ASSERT_TRUE(!res);
+  EXPECT_EQ(Error::SSLLoadingCerts, res.error());
 }
 
 TEST(SSLClientTest, ServerCertificateVerification3) {
   SSLClient cli("google.com");
   cli.set_ca_cert_path(CA_CERT_FILE);
   auto res = cli.Get("/");
-  ASSERT_TRUE(res != nullptr);
+  ASSERT_TRUE(res);
   ASSERT_EQ(301, res->status);
 }
 
@@ -2928,7 +3156,7 @@ TEST(SSLClientTest, WildcardHostNameMatch) {
   cli.enable_server_certificate_verification(true);
 
   auto res = cli.Get("/");
-  ASSERT_TRUE(res != nullptr);
+  ASSERT_TRUE(res);
   ASSERT_EQ(200, res->status);
 }
 
@@ -2964,12 +3192,12 @@ TEST(SSLClientServerTest, ClientCertPresent) {
   thread t = thread([&]() { ASSERT_TRUE(svr.listen(HOST, PORT)); });
   std::this_thread::sleep_for(std::chrono::milliseconds(1));
 
-  httplib::SSLClient cli(HOST, PORT, CLIENT_CERT_FILE, CLIENT_PRIVATE_KEY_FILE);
+  SSLClient cli(HOST, PORT, CLIENT_CERT_FILE, CLIENT_PRIVATE_KEY_FILE);
   cli.enable_server_certificate_verification(false);
   cli.set_connection_timeout(30);
 
   auto res = cli.Get("/test");
-  ASSERT_TRUE(res != nullptr);
+  ASSERT_TRUE(res);
   ASSERT_EQ(200, res->status);
 
   t.join();
@@ -3035,12 +3263,12 @@ TEST(SSLClientServerTest, MemoryClientCertPresent) {
   thread t = thread([&]() { ASSERT_TRUE(svr.listen(HOST, PORT)); });
   std::this_thread::sleep_for(std::chrono::milliseconds(1));
 
-  httplib::SSLClient cli(HOST, PORT, client_cert, client_private_key);
+  SSLClient cli(HOST, PORT, client_cert, client_private_key);
   cli.enable_server_certificate_verification(false);
   cli.set_connection_timeout(30);
 
   auto res = cli.Get("/test");
-  ASSERT_TRUE(res != nullptr);
+  ASSERT_TRUE(res);
   ASSERT_EQ(200, res->status);
 
   X509_free(server_cert);
@@ -3061,10 +3289,11 @@ TEST(SSLClientServerTest, ClientCertMissing) {
   thread t = thread([&]() { ASSERT_TRUE(svr.listen(HOST, PORT)); });
   std::this_thread::sleep_for(std::chrono::milliseconds(1));
 
-  httplib::SSLClient cli(HOST, PORT);
+  SSLClient cli(HOST, PORT);
   auto res = cli.Get("/test");
   cli.set_connection_timeout(30);
-  ASSERT_TRUE(res == nullptr);
+  ASSERT_TRUE(!res);
+  EXPECT_EQ(Error::SSLServerVerification, res.error());
 
   svr.stop();
 
@@ -3083,12 +3312,12 @@ TEST(SSLClientServerTest, TrustDirOptional) {
   thread t = thread([&]() { ASSERT_TRUE(svr.listen(HOST, PORT)); });
   std::this_thread::sleep_for(std::chrono::milliseconds(1));
 
-  httplib::SSLClient cli(HOST, PORT, CLIENT_CERT_FILE, CLIENT_PRIVATE_KEY_FILE);
+  SSLClient cli(HOST, PORT, CLIENT_CERT_FILE, CLIENT_PRIVATE_KEY_FILE);
   cli.enable_server_certificate_verification(false);
   cli.set_connection_timeout(30);
 
   auto res = cli.Get("/test");
-  ASSERT_TRUE(res != nullptr);
+  ASSERT_TRUE(res);
   ASSERT_EQ(200, res->status);
 
   t.join();
@@ -3104,68 +3333,93 @@ TEST(CleanupTest, WSACleanup) {
 
 // #ifndef CPPHTTPLIB_OPENSSL_SUPPORT
 // TEST(NoSSLSupport, SimpleInterface) {
-//   httplib::Client cli("https://yahoo.com");
+//   Client cli("https://yahoo.com");
 //   ASSERT_FALSE(cli.is_valid());
 // }
 // #endif
 
 #ifdef CPPHTTPLIB_OPENSSL_SUPPORT
 TEST(InvalidScheme, SimpleInterface) {
-  httplib::Client cli("scheme://yahoo.com");
+  Client cli("scheme://yahoo.com");
   ASSERT_FALSE(cli.is_valid());
 }
 
 TEST(NoScheme, SimpleInterface) {
-  httplib::Client cli("yahoo.com:80");
+  Client cli("yahoo.com:80");
   ASSERT_TRUE(cli.is_valid());
 }
 
 TEST(YahooRedirectTest2, SimpleInterface) {
-  httplib::Client cli("http://yahoo.com");
+  Client cli("http://yahoo.com");
 
   auto res = cli.Get("/");
-  ASSERT_TRUE(res != nullptr);
+  ASSERT_TRUE(res);
   EXPECT_EQ(301, res->status);
 
   cli.set_follow_location(true);
   res = cli.Get("/");
-  ASSERT_TRUE(res != nullptr);
+  ASSERT_TRUE(res);
   EXPECT_EQ(200, res->status);
 }
 
 TEST(YahooRedirectTest3, SimpleInterface) {
-  httplib::Client cli("https://yahoo.com");
+  Client cli("https://yahoo.com");
 
   auto res = cli.Get("/");
-  ASSERT_TRUE(res != nullptr);
+  ASSERT_TRUE(res);
   EXPECT_EQ(301, res->status);
 
   cli.set_follow_location(true);
   res = cli.Get("/");
+  ASSERT_TRUE(res);
+  EXPECT_EQ(200, res->status);
+}
+
+TEST(YahooRedirectTest3, NewResultInterface) {
+  Client cli("https://yahoo.com");
+
+  auto res = cli.Get("/");
+  ASSERT_TRUE(res);
+  ASSERT_FALSE(!res);
+  ASSERT_TRUE(res);
+  ASSERT_FALSE(res == nullptr);
   ASSERT_TRUE(res != nullptr);
+  EXPECT_EQ(Error::Success, res.error());
+  EXPECT_EQ(301, res.value().status);
+  EXPECT_EQ(301, (*res).status);
+  EXPECT_EQ(301, res->status);
+
+  cli.set_follow_location(true);
+  res = cli.Get("/");
+  ASSERT_TRUE(res);
+  EXPECT_EQ(Error::Success, res.error());
+  EXPECT_EQ(200, res.value().status);
+  EXPECT_EQ(200, (*res).status);
   EXPECT_EQ(200, res->status);
 }
 
 #ifdef CPPHTTPLIB_BROTLI_SUPPORT
 TEST(DecodeWithChunkedEncoding, BrotliEncoding) {
-  httplib::Client cli("https://cdnjs.cloudflare.com");
-  auto res = cli.Get("/ajax/libs/jquery/3.5.1/jquery.js", {{"Accept-Encoding", "brotli"}});
+  Client cli("https://cdnjs.cloudflare.com");
+  auto res = cli.Get("/ajax/libs/jquery/3.5.1/jquery.js",
+                     {{"Accept-Encoding", "brotli"}});
 
-  ASSERT_TRUE(res != nullptr);
+  ASSERT_TRUE(res);
   EXPECT_EQ(200, res->status);
   EXPECT_EQ(287630, res->body.size());
-  EXPECT_EQ("application/javascript; charset=utf-8", res->get_header_value("Content-Type"));
+  EXPECT_EQ("application/javascript; charset=utf-8",
+            res->get_header_value("Content-Type"));
 }
 #endif
 
 #if 0
 TEST(HttpsToHttpRedirectTest2, SimpleInterface) {
   auto res =
-      httplib::Client("https://httpbin.org")
+      Client("https://httpbin.org")
           .set_follow_location(true)
           .Get("/redirect-to?url=http%3A%2F%2Fwww.google.com&status_code=302");
 
-  ASSERT_TRUE(res != nullptr);
+  ASSERT_TRUE(res);
   EXPECT_EQ(200, res->status);
 }
 #endif
